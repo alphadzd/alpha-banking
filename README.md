@@ -7,7 +7,7 @@
 - Auto creation of job/gang accounts on bank first open
 - Boss-only access to job/gang accounts
 
-Documentation: https://docs.qbcore.org/qbcore-documentation/qbcore-resources/qb-banking
+Video: https://cdn.discordapp.com/attachments/1377513657738596503/1377994306425589811/2025-05-30_15-49-54.mp4?ex=683afcb4&is=6839ab34&hm=51fe2fa609a34a48de2db44d1208c73cdca1e25394dec52dcbbc15fc75ba7761&
 
 # License
 
