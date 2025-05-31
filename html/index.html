@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>qb-banking</title>
+        <link rel="stylesheet" href="style.css" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&family=Tajawal:wght@300;400;500;700;900&display=swap" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons" />
+        <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.2/axios.min.js"></script>
+    </head>
+    <body>
+        <div id="app" v-show="isBankOpen || isATMOpen || showPinPrompt">
+            <div class="banking-background" v-if="isBankOpen || isATMOpen || showPinPrompt"></div>
+            <div class="banking-container" v-show="isBankOpen">
+                <div class="sidebar">
+                    <div class="sidebar-header">
+                        <h2>{{ playerName }}</h2>
+                        <div class="balance-info">
+                            <span class="balance-label">{{ t('cash_balance') }}</span>
+                            <span class="positive-balance">${{ formatCurrency(playerCash) }}</span>
+                        </div>
+                    </div>
+                    <div class="sidebar-accounts">
+                        <div class="total-balance">
+                            <span class="balance-label">{{ t('total_account_balance') }}</span>
+                            <span class="positive-balance">${{ formatCurrency(getTotalBalance()) }}</span>
+                        </div>
+                        <ul>
+                            <li v-for="account in accounts" :key="account.name" :class="{ 'sidebar-selected': account.name === selectedAccountStatement }" @click="selectAccount(account)">
+                                <div class="account-card">
+                                    <div class="account-name">{{ account.name }}</div>
+                                    <div class="account-type">{{ t('type') }}: {{ account.type === 'shared' ? t('business') : t('personal') }}</div>
+                                    <div class="account-iban">
+                                        <span class="iban-label">{{ t('iban') }}:</span>
+                                        <span class="iban-number">{{ accountNumber }}</span>
+                                    </div>
+                                    <div class="account-balance">
+                                        <span class="positive-balance">${{ formatCurrency(account.balance) }}</span>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                    <button class="action-button logout-btn" @click="closeApplication()">
+                        <span class="material-icons">logout</span>
+                        {{ t('logout') }}
+                    </button>
+                </div>
+                <div class="main-content">
+                    <div class="nav-bar">
+                        <div class="nav-options">
+                            <div class="nav-option" :class="{selected: activeView === 'home'}" @click="setActiveView('home')">
+                                <span class="material-icons">home</span>
+                                <span>{{ t('home') }}</span>
+                            </div>
+                            <div class="nav-option" :class="{selected: activeView === 'money'}" @click="setActiveView('money')">
+                                <span class="material-icons">account_balance_wallet</span>
+                                <span>{{ t('money') }}</span>
+                            </div>
+                            <div class="nav-option" :class="{selected: activeView === 'transfer'}" @click="setActiveView('transfer')">
+                                <span class="material-icons">swap_horiz</span>
+                                <span>{{ t('transfer') }}</span>
+                            </div>
+                            <!-- Loans feature removed -->
+                            <!-- <div class="nav-option" :class="{selected: activeView === 'loans'}" @click="setActiveView('loans')">
+                                <span class="material-icons">monetization_on</span>
+                                <span>{{ t('loans') }}</span>
+                            </div> -->
+                            <div class="nav-option" :class="{selected: activeView === 'analytics'}" @click="setActiveView('analytics')">
+                                <span class="material-icons">insights</span>
+                                <span>{{ t('analytics') }}</span>
+                            </div>
+                            <div class="nav-option" :class="{selected: activeView === 'accountOptions'}" @click="setActiveView('accountOptions')">
+                                <span class="material-icons">settings</span>
+                                <span>{{ t('settings') }}</span>
+                            </div>
+                        </div>
+                        <div class="notification-container" v-if="notification">
+                            <div :class="['notification', notification.type]">
+                                <span class="material-icons">{{ notification.type === 'success' ? 'check_circle' : 'error' }}</span>
+                                {{ notification.message }}
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="activeView === 'home'" class="transactions-container">
+                        <div class="transactions-header">
+                            <div class="transactions-title">
+                                <span class="material-icons">receipt_long</span>
+                                <h3>{{ t('transaction_history') }}</h3>
+                            </div>
+                            <div class="account-info">
+                                <span class="account-label">{{ selectedAccountStatement }}</span>
+                                <span class="account-balance positive-balance">${{ formatCurrency(getSelectedAccountBalance()) }}</span>
+                            </div>
+                        </div>
+                        <div class="transactions">
+                            <div class="transaction-labels">
+                                <span>{{ t('date') }}</span>
+                                <span>{{ t('id') }}</span>
+                                <span>{{ t('description') }}</span>
+                                <span>{{ t('amount') }}</span>
+                            </div>
+                            <li v-for="statement in statements[selectedAccountStatement]" :key="statement.id" :class="statement.type === 'deposit' ? 'deposit' : 'withdraw'">
+                                <span>{{ formatDate(statement.date) }}</span>
+                                <span>{{ statement.user }}</span>
+                                <span>{{ statement.reason }}</span>
+                                <span :class="balanceClass(statement.type)">
+                                    <span class="material-icons">{{ statement.type === 'deposit' ? 'arrow_downward' : 'arrow_upward' }}</span>
+                                    {{ statement.type === 'deposit' ? '+' : '-' }}${{ formatCurrency(statement.amount) }}
+                                </span>
+                            </li>
+                            <div v-if="!statements[selectedAccountStatement] || statements[selectedAccountStatement].length === 0" class="no-transactions">
+                                <span class="material-icons">info</span>
+                                <p>{{ t('no_transactions') }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="activeView === 'money'" class="money">
+                        <div class="manage-money">
+                            <div class="money-title">
+                                <span class="material-icons">account_balance_wallet</span>
+                                {{ t('money_management') }}
+                            </div>
+                            <div class="money-card">
+                                <div class="money-card-header">
+                                    <span class="material-icons">payments</span>
+                                    <h3>{{ t('deposit_withdraw') }}</h3>
+                                </div>
+                                <div class="money-card-content">
+                                    <label for="fromAccount">{{ t('select_account') }}:</label>
+                                    <select id="fromAccount" v-model="selectedMoneyAccount">
+                                        <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                                    </select>
+                                    
+                                    <label for="amount">{{ t('amount') }}:</label>
+                                    <div class="amount-input">
+                                        <span class="currency-symbol">$</span>
+                                        <input type="number" id="amount" v-model="selectedMoneyAmount" :placeholder="t('enter_amount')" />
+                                    </div>
+                                    
+                                    <div class="quick-amounts">
+                                        <button @click="selectedMoneyAmount = 100">$100</button>
+                                        <button @click="selectedMoneyAmount = 500">$500</button>
+                                        <button @click="selectedMoneyAmount = 1000">$1000</button>
+                                        <button @click="selectedMoneyAmount = 5000">$5000</button>
+                                    </div>
+                                    
+                                    <label for="money-reason">{{ t('reason') }}:</label>
+                                    <input type="text" id="money-reason" v-model="moneyReason" placeholder="e.g. Salary deposit" />
+                                    
+                                    <div class="card-buttons">
+                                        <button class="action-button withdraw-btn" @click="withdrawMoney">
+                                            <span class="material-icons">remove_circle</span>
+                                            {{ t('withdraw') }}
+                                        </button>
+                                        <button class="action-button deposit-btn" @click="depositMoney">
+                                            <span class="material-icons">add_circle</span>
+                                            {{ t('deposit') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-if="activeView === 'transfer'" class="transfer">
+                        <div class="transfer-header">
+                            <div class="nav-option" :class="{selected: transferType === 'internal'}" @click="setTransferType('internal')">{{ t('internal') }}</div>
+                            <div class="nav-option" :class="{selected: transferType === 'external'}" @click="setTransferType('external')">{{ t('external') }}</div>
+                            <div class="nav-option" :class="{selected: transferType === 'scheduled'}" @click="setTransferType('scheduled')">{{ t('scheduled') }}</div>
+                            <div class="nav-option" :class="{selected: transferType === 'quickpay'}" @click="setTransferType('quickpay')">{{ t('quickpay') }}</div>
+                        </div>
+                        
+                        <!-- Internal Transfer -->
+                        <div v-if="transferType === 'internal'" class="transfer-options">
+                            <div class="money-card">
+                                <div class="money-card-header">
+                                    <span class="material-icons">compare_arrows</span>
+                                    <h3>{{ t('internal_transfer') }}</h3>
+                                </div>
+                                <div class="money-card-content">
+                                    <label for="internalFrom">{{ t('from_account') }}:</label>
+                                    <select id="internalFrom" v-model="internalFromAccount">
+                                        <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }} - ${{ formatCurrency(account.balance) }}</option>
+                                    </select>
+                                    
+                                    <label for="internalTo">{{ t('to_account') }}:</label>
+                                    <select id="internalTo" v-model="internalToAccount">
+                                        <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                                    </select>
+                                    
+                                    <label for="internalAmount">{{ t('amount') }}:</label>
+                                    <div class="amount-input">
+                                        <span class="currency-symbol">$</span>
+                                        <input type="number" id="internalAmount" v-model="internalTransferAmount" :placeholder="t('enter_amount')" />
+                                    </div>
+                                    
+                                    <label for="transfer-reason">{{ t('reason') }}:</label>
+                                    <input type="text" id="transfer-reason" v-model="transferReason" placeholder="e.g. Rent payment" />
+                                    
+                                    <button class="action-button" @click="internalTransfer">
+                                        <span class="material-icons">send</span>
+                                        {{ t('transfer_now') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- External Transfer -->
+                        <div v-if="transferType === 'external'" class="transfer-options">
+                            <div class="money-card">
+                                <div class="money-card-header">
+                                    <span class="material-icons">swap_horiz</span>
+                                    <h3>{{ t('external_transfer') }}</h3>
+                                </div>
+                                <div class="money-card-content">
+                                    <label for="externalFrom">{{ t('from_account') }}:</label>
+                                    <select id="externalFrom" v-model="externalFromAccount">
+                                        <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }} - ${{ formatCurrency(account.balance) }}</option>
+                                    </select>
+                                    
+                                    <label for="externalAccountNumber">{{ t('recipient_account') }}:</label>
+                                    <input type="text" id="externalAccountNumber" v-model="externalAccountNumber" placeholder="Enter account number" />
+                                    
+                                    <label for="externalAmount">{{ t('amount') }}:</label>
+                                    <div class="amount-input">
+                                        <span class="currency-symbol">$</span>
+                                        <input type="number" id="externalAmount" v-model="externalTransferAmount" :placeholder="t('enter_amount')" />
+                                    </div>
+                                    
+                                    <label for="transfer-reason">{{ t('reason') }}:</label>
+                                    <input type="text" id="transfer-reason" v-model="transferReason" placeholder="e.g. Invoice payment" />
+                                    
+                                    <button class="action-button" @click="externalTransfer">
+                                        <span class="material-icons">send</span>
+                                        {{ t('transfer_now') }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Scheduled Transfers -->
+                        <div v-if="transferType === 'scheduled'" class="transfer-options">
+                            <div class="money-card">
+                                <div class="money-card-header">
+                                    <span class="material-icons">schedule</span>
+                                    <h3>Schedule a Transfer</h3>
+                                </div>
+                                <div class="money-card-content">
+                                    <label for="scheduledFrom">From Account:</label>
+                                    <select id="scheduledFrom" v-model="scheduledFromAccount">
+                                        <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                                    </select>
+                                    
+                                    <label for="scheduledTo">Transfer Type:</label>
+                                    <select id="scheduledTo" v-model="scheduledTransferType">
+                                        <option value="internal">Internal Account</option>
+                                        <option value="external">External Account</option>
+                                    </select>
+                                    
+                                    <div v-if="scheduledTransferType === 'internal'">
+                                        <label for="scheduledToAccount">To Account:</label>
+                                        <select id="scheduledToAccount" v-model="scheduledToAccount">
+                                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div v-if="scheduledTransferType === 'external'">
+                                        <label for="scheduledToNumber">Recipient Account Number:</label>
+                                        <input type="text" id="scheduledToNumber" v-model="scheduledToNumber" placeholder="Enter account number" />
+                                    </div>
+                                    
+                                    <label for="scheduledAmount">Amount:</label>
+                                    <div class="amount-input">
+                                        <span class="currency-symbol">$</span>
+                                        <input type="number" id="scheduledAmount" v-model="scheduledAmount" placeholder="Enter amount" />
+                                    </div>
+                                    
+                                    <label for="scheduledReason">Reason:</label>
+                                    <input type="text" id="scheduledReason" v-model="scheduledReason" placeholder="e.g. Monthly rent" />
+                                    
+                                    <label for="scheduledDate">First Payment Date:</label>
+                                    <input type="date" id="scheduledDate" v-model="scheduledDate" />
+                                    
+                                    <label for="scheduledFrequency">Frequency:</label>
+                                    <select id="scheduledFrequency" v-model="scheduledFrequency">
+                                        <option value="once">One-time</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="biweekly">Bi-weekly</option>
+                                        <option value="monthly">Monthly</option>
+                                    </select>
+                                    
+                                    <button class="action-button" @click="scheduleTransfer">
+                                        <span class="material-icons">event</span>
+                                        Schedule Transfer
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Scheduled Transfers List -->
+                            <div class="money-card" v-if="scheduledTransfers.length > 0">
+                                <div class="money-card-header">
+                                    <span class="material-icons">list</span>
+                                    <h3>Your Scheduled Transfers</h3>
+                                </div>
+                                <div class="money-card-content">
+                                    <div v-for="transfer in scheduledTransfers" :key="transfer.id" class="scheduled-item">
+                                        <div class="scheduled-info">
+                                            <div class="scheduled-title">
+                                                {{ transfer.reason }} - ${{ formatCurrency(transfer.amount) }}
+                                            </div>
+                                            <div class="scheduled-details">
+                                                <span>From: {{ transfer.fromAccount }}</span>
+                                                <span>To: {{ transfer.toAccount || transfer.toNumber }}</span>
+                                                <span>Next: {{ formatDate(transfer.nextDate) }}</span>
+                                                <span>Frequency: {{ formatFrequency(transfer.frequency) }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="scheduled-actions">
+                                            <button class="action-button" @click="cancelScheduledTransfer(transfer)">
+                                                <span class="material-icons">cancel</span>
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Pay -->
+                        <div v-if="transferType === 'quickpay'" class="transfer-options">
+                            <div class="money-card">
+                                <div class="money-card-header">
+                                    <span class="material-icons">flash_on</span>
+                                    <h3>Quick Pay</h3>
+                                </div>
+                                <div class="money-card-content">
+                                    <p class="quick-pay-info">Send money to your frequent contacts with just a few clicks.</p>
+                                    
+                                    <div v-if="savedContacts.length > 0" class="contacts-grid">
+                                        <div v-for="contact in savedContacts" :key="contact.id" class="contact-card" @click="selectQuickPayContact(contact)">
+                                            <div class="contact-icon">
+                                                <span class="material-icons">person</span>
+                                            </div>
+                                            <div class="contact-name">{{ contact.name }}</div>
+                                            <div class="contact-account">{{ contact.accountNumber }}</div>
+                                        </div>
+                                        <div class="contact-card add-contact" @click="showAddContactForm = true">
+                                            <div class="contact-icon">
+                                                <span class="material-icons">add_circle</span>
+                                            </div>
+                                            <div class="contact-name">Add New</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div v-else class="no-contacts">
+                                        <span class="material-icons">people</span>
+                                        <p>No saved contacts. Add your first one!</p>
+                                        <button class="action-button" @click="showAddContactForm = true">
+                                            <span class="material-icons">person_add</span>
+                                            Add Contact
+                                        </button>
+                                    </div>
+                                    
+                                    <!-- Add Contact Form -->
+                                    <div v-if="showAddContactForm" class="add-contact-form">
+                                        <h4>Add New Contact</h4>
+                                        <label for="contactName">Name:</label>
+                                        <input type="text" id="contactName" v-model="newContactName" placeholder="Contact name" />
+                                        
+                                        <label for="contactAccount">Account Number:</label>
+                                        <input type="text" id="contactAccount" v-model="newContactAccount" placeholder="Account number" />
+                                        
+                                        <div class="form-buttons">
+                                            <button class="action-button" @click="cancelAddContact">Cancel</button>
+                                            <button class="action-button" @click="saveNewContact">Save Contact</button>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Quick Pay Form -->
+                                    <div v-if="selectedContact" class="quick-pay-form">
+                                        <h4>Send Money to {{ selectedContact.name }}</h4>
+                                        
+                                        <label for="quickPayFrom">From Account:</label>
+                                        <select id="quickPayFrom" v-model="quickPayFromAccount">
+                                            <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }} - ${{ formatCurrency(account.balance) }}</option>
+                                        </select>
+                                        
+                                        <label for="quickPayAmount">Amount:</label>
+                                        <div class="amount-input">
+                                            <span class="currency-symbol">$</span>
+                                            <input type="number" id="quickPayAmount" v-model="quickPayAmount" placeholder="Enter amount" />
+                                        </div>
+                                        
+                                        <div class="quick-amounts">
+                                            <button @click="quickPayAmount = 50">$50</button>
+                                            <button @click="quickPayAmount = 100">$100</button>
+                                            <button @click="quickPayAmount = 500">$500</button>
+                                            <button @click="quickPayAmount = 1000">$1000</button>
+                                        </div>
+                                        
+                                        <label for="quickPayReason">Reason:</label>
+                                        <input type="text" id="quickPayReason" v-model="quickPayReason" placeholder="e.g. Dinner payment" />
+                                        
+                                        <div class="form-buttons">
+                                            <button class="action-button" @click="cancelQuickPay">Cancel</button>
+                                            <button class="action-button" @click="sendQuickPay">
+                                                <span class="material-icons">send</span>
+                                                Send Money
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Loans Section Removed -->
+                    
+                    <!-- Analytics Section -->
+                    <div v-if="activeView === 'analytics'" class="analytics">
+                        <div class="analytics-header">
+                            <span class="material-icons">insights</span>
+                            <h2>{{ t('financial_overview') }}</h2>
+                        </div>
+                        
+                        <div class="analytics-tabs">
+                            <div class="tab" :class="{active: analyticsTab === 'overview'}" @click="setAnalyticsTab('overview')">
+                                <span class="material-icons">dashboard</span>
+                                {{ t('overview') }}
+                            </div>
+                            <div class="tab" :class="{active: analyticsTab === 'spending'}" @click="setAnalyticsTab('spending')">
+                                <span class="material-icons">money_off</span>
+                                {{ t('spending') }}
+                            </div>
+                            <div class="tab" :class="{active: analyticsTab === 'income'}" @click="setAnalyticsTab('income')">
+                                <span class="material-icons">payments</span>
+                                {{ t('income') }}
+                            </div>
+                            <div class="tab" :class="{active: analyticsTab === 'trends'}" @click="setAnalyticsTab('trends')">
+                                <span class="material-icons">trending_up</span>
+                                {{ t('trends') }}
+                            </div>
+                            <div class="tab" :class="{active: analyticsTab === 'forecast'}" @click="setAnalyticsTab('forecast')">
+                                <span class="material-icons">auto_graph</span>
+                                {{ t('forecast') }}
+                            </div>
+                        </div>
+                        
+                        <!-- Overview Tab -->
+                        <div v-if="analyticsTab === 'overview'" class="analytics-tab-content">
+                            <div class="analytics-summary-cards">
+                                <div class="summary-card">
+                                    <div class="summary-icon income-icon">
+                                        <span class="material-icons">arrow_downward</span>
+                                    </div>
+                                    <div class="summary-details">
+                                        <div class="summary-title">Total Income</div>
+                                        <div class="summary-value positive-balance">${{ formatCurrency(getTotalIncome()) }}</div>
+                                        <div class="summary-change" :class="getIncomeChange() >= 0 ? 'positive-change' : 'negative-change'">
+                                            <span class="material-icons">{{ getIncomeChange() >= 0 ? 'arrow_upward' : 'arrow_downward' }}</span>
+                                            {{ Math.abs(getIncomeChange()).toFixed(1) }}% from last period
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="summary-card">
+                                    <div class="summary-icon expense-icon">
+                                        <span class="material-icons">arrow_upward</span>
+                                    </div>
+                                    <div class="summary-details">
+                                        <div class="summary-title">Total Expenses</div>
+                                        <div class="summary-value negative-balance">${{ formatCurrency(getTotalExpenses()) }}</div>
+                                        <div class="summary-change" :class="getExpenseChange() <= 0 ? 'positive-change' : 'negative-change'">
+                                            <span class="material-icons">{{ getExpenseChange() <= 0 ? 'arrow_downward' : 'arrow_upward' }}</span>
+                                            {{ Math.abs(getExpenseChange()).toFixed(1) }}% from last period
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="summary-card">
+                                    <div class="summary-icon" :class="getNetFlow() >= 0 ? 'savings-icon' : 'debt-icon'">
+                                        <span class="material-icons">{{ getNetFlow() >= 0 ? 'savings' : 'credit_score' }}</span>
+                                    </div>
+                                    <div class="summary-details">
+                                        <div class="summary-title">Net Cash Flow</div>
+                                        <div class="summary-value" :class="getNetFlow() >= 0 ? 'positive-balance' : 'negative-balance'">
+                                            ${{ formatCurrency(getNetFlow()) }}
+                                        </div>
+                                        <div class="summary-subtitle">{{ getNetFlow() >= 0 ? 'Savings Rate' : 'Deficit Rate' }}: {{ getSavingsRate() }}%</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="summary-card">
+                                    <div class="summary-icon health-icon">
+                                        <span class="material-icons">health_and_safety</span>
+                                    </div>
+                                    <div class="summary-details">
+                                        <div class="summary-title">Financial Health</div>
+                                        <div class="summary-value">{{ getFinancialHealthStatus() }}</div>
+                                        <div class="health-meter">
+                                            <div class="health-bar" :style="{ width: getFinancialHealthScore() + '%', backgroundColor: getHealthColor() }"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="analytics-cards">
+                                <!-- Income vs Expenses -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">trending_up</span>
+                                        <h3>Income vs Expenses</h3>
+                                        <div class="period-selector">
+                                            <select v-model="analyticsPeriod" @change="updateAnalytics">
+                                                <option value="week">This Week</option>
+                                                <option value="month">This Month</option>
+                                                <option value="quarter">This Quarter</option>
+                                                <option value="year">This Year</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="analytics-summary">
+                                            <div class="analytics-item">
+                                                <span>Total Income:</span>
+                                                <span class="positive-balance">${{ formatCurrency(getTotalIncome()) }}</span>
+                                            </div>
+                                            <div class="analytics-item">
+                                                <span>Total Expenses:</span>
+                                                <span class="negative-balance">${{ formatCurrency(getTotalExpenses()) }}</span>
+                                            </div>
+                                            <div class="analytics-item">
+                                                <span>Net Flow:</span>
+                                                <span :class="getNetFlow() >= 0 ? 'positive-balance' : 'negative-balance'">${{ formatCurrency(getNetFlow()) }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="analytics-chart">
+                                            <div class="chart-bar income" :style="{ width: getIncomePercentage() + '%' }">
+                                                <span>Income</span>
+                                            </div>
+                                            <div class="chart-bar expenses" :style="{ width: getExpensesPercentage() + '%' }">
+                                                <span>Expenses</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Transaction Categories -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">pie_chart</span>
+                                        <h3>Spending by Category</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="category-list">
+                                            <div v-for="(amount, category) in getTransactionCategories()" :key="category" class="category-item">
+                                                <div class="category-info">
+                                                    <span class="category-icon">
+                                                        <span class="material-icons">{{ getCategoryIcon(category) }}</span>
+                                                    </span>
+                                                    <span class="category-name">{{ category }}</span>
+                                                    <span class="category-amount">${{ formatCurrency(amount) }}</span>
+                                                </div>
+                                                <div class="category-bar-container">
+                                                    <div class="category-bar" :style="{ width: getCategoryPercentage(amount) + '%', backgroundColor: getCategoryColor(category) }"></div>
+                                                    <span class="category-percentage">{{ getCategoryPercentage(amount).toFixed(1) }}%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Recent Transactions with Insights -->
+                            <div class="analytics-card full-width">
+                                <div class="analytics-card-header">
+                                    <span class="material-icons">receipt_long</span>
+                                    <h3>Transaction Insights</h3>
+                                </div>
+                                <div class="analytics-card-content">
+                                    <div class="insights-container">
+                                        <div class="insight-card" v-for="insight in getTransactionInsights()" :key="insight.id">
+                                            <div class="insight-icon">
+                                                <span class="material-icons">{{ insight.icon }}</span>
+                                            </div>
+                                            <div class="insight-content">
+                                                <div class="insight-title">{{ insight.title }}</div>
+                                                <div class="insight-description">{{ insight.description }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Spending Tab -->
+                        <div v-if="analyticsTab === 'spending'" class="analytics-tab-content">
+                            <div class="analytics-cards">
+                                <!-- Top Expenses -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">trending_down</span>
+                                        <h3>Top Expenses</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="top-expenses">
+                                            <div v-for="expense in getTopExpenses()" :key="expense.id" class="expense-item">
+                                                <div class="expense-details">
+                                                    <div class="expense-date">{{ formatDate(expense.date) }}</div>
+                                                    <div class="expense-description">{{ expense.reason }}</div>
+                                                </div>
+                                                <div class="expense-amount negative-balance">${{ formatCurrency(expense.amount) }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Spending Heatmap -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">calendar_month</span>
+                                        <h3>Spending Heatmap</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="heatmap-legend">
+                                            <div class="legend-item">
+                                                <div class="legend-color" style="background-color: #e0f7fa;"></div>
+                                                <span>Low</span>
+                                            </div>
+                                            <div class="legend-item">
+                                                <div class="legend-color" style="background-color: #4dd0e1;"></div>
+                                                <span>Medium</span>
+                                            </div>
+                                            <div class="legend-item">
+                                                <div class="legend-color" style="background-color: #00acc1;"></div>
+                                                <span>High</span>
+                                            </div>
+                                            <div class="legend-item">
+                                                <div class="legend-color" style="background-color: #006064;"></div>
+                                                <span>Very High</span>
+                                            </div>
+                                        </div>
+                                        <div class="spending-heatmap">
+                                            <div v-for="(day, index) in getSpendingHeatmap()" :key="index" 
+                                                class="heatmap-day" 
+                                                :style="{ backgroundColor: getHeatmapColor(day.intensity) }"
+                                                :title="`${day.date}: $${formatCurrency(day.amount)}`">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Spending Patterns -->
+                            <div class="analytics-card full-width">
+                                <div class="analytics-card-header">
+                                    <span class="material-icons">insights</span>
+                                    <h3>Spending Patterns</h3>
+                                </div>
+                                <div class="analytics-card-content">
+                                    <div class="spending-patterns">
+                                        <div class="pattern-card">
+                                            <div class="pattern-title">
+                                                <span class="material-icons">schedule</span>
+                                                Time of Day
+                                            </div>
+                                            <div class="pattern-chart">
+                                                <div v-for="(hour, index) in getHourlySpending()" :key="index" 
+                                                    class="hour-bar" 
+                                                    :style="{ height: getHourHeight(hour.amount) + '%' }"
+                                                    :title="`${hour.label}: $${formatCurrency(hour.amount)}`">
+                                                </div>
+                                            </div>
+                                            <div class="time-labels">
+                                                <span>Morning</span>
+                                                <span>Afternoon</span>
+                                                <span>Evening</span>
+                                                <span>Night</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="pattern-card">
+                                            <div class="pattern-title">
+                                                <span class="material-icons">date_range</span>
+                                                Day of Week
+                                            </div>
+                                            <div class="pattern-chart">
+                                                <div v-for="(day, index) in getDailySpending()" :key="index" 
+                                                    class="day-bar" 
+                                                    :style="{ height: getDayHeight(day.amount) + '%' }"
+                                                    :title="`${day.label}: $${formatCurrency(day.amount)}`">
+                                                </div>
+                                            </div>
+                                            <div class="day-labels">
+                                                <span>Mon</span>
+                                                <span>Tue</span>
+                                                <span>Wed</span>
+                                                <span>Thu</span>
+                                                <span>Fri</span>
+                                                <span>Sat</span>
+                                                <span>Sun</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="pattern-card">
+                                            <div class="pattern-title">
+                                                <span class="material-icons">account_balance</span>
+                                                Merchant Type
+                                            </div>
+                                            <div class="merchant-list">
+                                                <div v-for="merchant in getTopMerchants()" :key="merchant.name" class="merchant-item">
+                                                    <div class="merchant-info">
+                                                        <span class="merchant-name">{{ merchant.name }}</span>
+                                                        <span class="merchant-amount">${{ formatCurrency(merchant.amount) }}</span>
+                                                    </div>
+                                                    <div class="merchant-bar-container">
+                                                        <div class="merchant-bar" :style="{ width: getMerchantPercentage(merchant.amount) + '%' }"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Income Tab -->
+                        <div v-if="analyticsTab === 'income'" class="analytics-tab-content">
+                            <div class="analytics-cards">
+                                <!-- Income Sources -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">account_balance</span>
+                                        <h3>Income Sources</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="income-sources">
+                                            <div v-for="source in getIncomeSources()" :key="source.name" class="income-source">
+                                                <div class="source-info">
+                                                    <div class="source-icon">
+                                                        <span class="material-icons">{{ source.icon }}</span>
+                                                    </div>
+                                                    <div class="source-details">
+                                                        <div class="source-name">{{ source.name }}</div>
+                                                        <div class="source-amount positive-balance">${{ formatCurrency(source.amount) }}</div>
+                                                    </div>
+                                                </div>
+                                                <div class="source-percentage">{{ source.percentage.toFixed(1) }}%</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Income Stability -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">stability</span>
+                                        <h3>Income Stability</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="stability-score">
+                                            <div class="score-circle" :style="{ background: `conic-gradient(#4caf50 ${getIncomeStabilityScore()}%, #e0e0e0 0)` }">
+                                                <div class="score-inner">
+                                                    <div class="score-value">{{ Math.round(getIncomeStabilityScore()) }}%</div>
+                                                    <div class="score-label">Stability</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="stability-details">
+                                            <div class="stability-item">
+                                                <div class="stability-label">Recurring Income:</div>
+                                                <div class="stability-value">${{ formatCurrency(getRecurringIncome()) }}</div>
+                                            </div>
+                                            <div class="stability-item">
+                                                <div class="stability-label">Variable Income:</div>
+                                                <div class="stability-value">${{ formatCurrency(getVariableIncome()) }}</div>
+                                            </div>
+                                            <div class="stability-item">
+                                                <div class="stability-label">Income Frequency:</div>
+                                                <div class="stability-value">{{ getIncomeFrequency() }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Income Trends -->
+                            <div class="analytics-card full-width">
+                                <div class="analytics-card-header">
+                                    <span class="material-icons">show_chart</span>
+                                    <h3>Income Trends</h3>
+                                </div>
+                                <div class="analytics-card-content">
+                                    <div class="income-chart">
+                                        <div class="chart-y-axis">
+                                            <div v-for="(value, index) in getIncomeChartYAxis()" :key="index" class="y-axis-label">
+                                                ${{ formatCurrency(value) }}
+                                            </div>
+                                        </div>
+                                        <div class="chart-bars">
+                                            <div v-for="(month, index) in getMonthlyIncome()" :key="index" class="chart-column">
+                                                <div class="chart-bar-container">
+                                                    <div class="income-bar" :style="{ height: getIncomeBarHeight(month.amount) + '%' }"></div>
+                                                </div>
+                                                <div class="x-axis-label">{{ month.label }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="income-trend-summary">
+                                        <div class="trend-item">
+                                            <div class="trend-label">Average Monthly Income:</div>
+                                            <div class="trend-value">${{ formatCurrency(getAverageMonthlyIncome()) }}</div>
+                                        </div>
+                                        <div class="trend-item">
+                                            <div class="trend-label">Income Growth (YoY):</div>
+                                            <div class="trend-value" :class="getIncomeGrowth() >= 0 ? 'positive-balance' : 'negative-balance'">
+                                                {{ getIncomeGrowth() >= 0 ? '+' : '' }}{{ getIncomeGrowth().toFixed(1) }}%
+                                            </div>
+                                        </div>
+                                        <div class="trend-item">
+                                            <div class="trend-label">Projected Annual Income:</div>
+                                            <div class="trend-value">${{ formatCurrency(getProjectedAnnualIncome()) }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Trends Tab -->
+                        <div v-if="analyticsTab === 'trends'" class="analytics-tab-content">
+                            <div class="analytics-cards">
+                                <!-- Monthly Trends -->
+                                <div class="analytics-card full-width">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">timeline</span>
+                                        <h3>Monthly Financial Trends</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="trend-chart">
+                                            <div class="chart-y-axis">
+                                                <div v-for="(value, index) in getTrendChartYAxis()" :key="index" class="y-axis-label">
+                                                    ${{ formatCurrency(value) }}
+                                                </div>
+                                            </div>
+                                            <div class="chart-content">
+                                                <div class="chart-lines">
+                                                    <div v-for="(value, index) in getTrendChartYAxis()" :key="index" class="chart-line"></div>
+                                                </div>
+                                                <div class="chart-data">
+                                                    <svg class="trend-lines" viewBox="0 0 1000 300" preserveAspectRatio="none">
+                                                        <polyline class="income-line" :points="getIncomeTrendPoints()" />
+                                                        <polyline class="expense-line" :points="getExpenseTrendPoints()" />
+                                                        <polyline class="balance-line" :points="getBalanceTrendPoints()" />
+                                                    </svg>
+                                                </div>
+                                                <div class="chart-x-axis">
+                                                    <div v-for="(month, index) in getMonthLabels()" :key="index" class="x-axis-label">
+                                                        {{ month }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="trend-legend">
+                                            <div class="legend-item">
+                                                <div class="legend-color income-color"></div>
+                                                <span>Income</span>
+                                            </div>
+                                            <div class="legend-item">
+                                                <div class="legend-color expense-color"></div>
+                                                <span>Expenses</span>
+                                            </div>
+                                            <div class="legend-item">
+                                                <div class="legend-color balance-color"></div>
+                                                <span>Net Balance</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="analytics-cards">
+                                <!-- Category Trends -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">category</span>
+                                        <h3>Category Trends</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="category-trends">
+                                            <div v-for="category in getCategoryTrends()" :key="category.name" class="category-trend">
+                                                <div class="trend-header">
+                                                    <div class="trend-name">{{ category.name }}</div>
+                                                    <div class="trend-change" :class="category.change >= 0 ? 'positive-change' : 'negative-change'">
+                                                        <span class="material-icons">{{ category.change >= 0 ? 'arrow_upward' : 'arrow_downward' }}</span>
+                                                        {{ Math.abs(category.change).toFixed(1) }}%
+                                                    </div>
+                                                </div>
+                                                <div class="trend-sparkline">
+                                                    <div v-for="(value, index) in category.values" :key="index" 
+                                                        class="sparkline-bar" 
+                                                        :style="{ height: getSparklineHeight(value, category.values) + '%' }">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Anomaly Detection -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">error_outline</span>
+                                        <h3>Unusual Activity</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="anomalies">
+                                            <div v-if="getAnomalies().length > 0">
+                                                <div v-for="anomaly in getAnomalies()" :key="anomaly.id" class="anomaly-item">
+                                                    <div class="anomaly-icon">
+                                                        <span class="material-icons">{{ anomaly.icon }}</span>
+                                                    </div>
+                                                    <div class="anomaly-details">
+                                                        <div class="anomaly-title">{{ anomaly.title }}</div>
+                                                        <div class="anomaly-description">{{ anomaly.description }}</div>
+                                                        <div class="anomaly-date">{{ formatDate(anomaly.date) }}</div>
+                                                    </div>
+                                                    <div class="anomaly-amount" :class="anomaly.type === 'expense' ? 'negative-balance' : 'positive-balance'">
+                                                        ${{ formatCurrency(anomaly.amount) }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div v-else class="no-anomalies">
+                                                <span class="material-icons">check_circle</span>
+                                                <p>No unusual activity detected</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Forecast Tab -->
+                        <div v-if="analyticsTab === 'forecast'" class="analytics-tab-content">
+                            <div class="analytics-cards">
+                                <!-- Cash Flow Forecast -->
+                                <div class="analytics-card full-width">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">auto_graph</span>
+                                        <h3>Cash Flow Forecast</h3>
+                                        <div class="forecast-period">
+                                            <select v-model="forecastPeriod" @change="updateForecast">
+                                                <option value="3">Next 3 Months</option>
+                                                <option value="6">Next 6 Months</option>
+                                                <option value="12">Next 12 Months</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="forecast-chart">
+                                            <div class="chart-y-axis">
+                                                <div v-for="(value, index) in getForecastYAxis()" :key="index" class="y-axis-label">
+                                                    ${{ formatCurrency(value) }}
+                                                </div>
+                                            </div>
+                                            <div class="chart-content">
+                                                <div class="chart-lines">
+                                                    <div v-for="(value, index) in getForecastYAxis()" :key="index" class="chart-line"></div>
+                                                </div>
+                                                <div class="chart-data">
+                                                    <div class="forecast-area">
+                                                        <svg class="forecast-svg" viewBox="0 0 1000 300" preserveAspectRatio="none">
+                                                            <path class="forecast-path" :d="getForecastPath()" />
+                                                            <path class="forecast-area" :d="getForecastAreaPath()" />
+                                                        </svg>
+                                                    </div>
+                                                    <div class="forecast-markers">
+                                                        <div v-for="(marker, index) in getForecastMarkers()" :key="index" 
+                                                            class="forecast-marker" 
+                                                            :style="{ left: (index / (getForecastMonths().length - 1) * 100) + '%', bottom: getMarkerPosition(marker.value) + '%' }"
+                                                            :class="{ 'positive': marker.value >= 0, 'negative': marker.value < 0 }">
+                                                            <div class="marker-tooltip">
+                                                                <div class="tooltip-date">{{ marker.month }}</div>
+                                                                <div class="tooltip-value">${{ formatCurrency(marker.value) }}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="chart-x-axis">
+                                                    <div v-for="(month, index) in getForecastMonths()" :key="index" class="x-axis-label">
+                                                        {{ month }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="analytics-cards">
+                                <!-- Forecast Insights -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">lightbulb</span>
+                                        <h3>Forecast Insights</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="forecast-insights">
+                                            <div v-for="insight in getForecastInsights()" :key="insight.id" class="forecast-insight">
+                                                <div class="insight-icon">
+                                                    <span class="material-icons">{{ insight.icon }}</span>
+                                                </div>
+                                                <div class="insight-content">
+                                                    <div class="insight-title">{{ insight.title }}</div>
+                                                    <div class="insight-description">{{ insight.description }}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Savings Projection -->
+                                <div class="analytics-card">
+                                    <div class="analytics-card-header">
+                                        <span class="material-icons">savings</span>
+                                        <h3>Savings Projection</h3>
+                                    </div>
+                                    <div class="analytics-card-content">
+                                        <div class="savings-projection">
+                                            <div class="projection-summary">
+                                                <div class="projection-amount">
+                                                    <div class="projection-label">Projected Savings</div>
+                                                    <div class="projection-value positive-balance">${{ formatCurrency(getProjectedSavings()) }}</div>
+                                                    <div class="projection-period">in {{ forecastPeriod }} months</div>
+                                                </div>
+                                                <div class="projection-rate">
+                                                    <div class="rate-circle" :style="{ background: `conic-gradient(#4caf50 ${getSavingsRate()}%, #e0e0e0 0)` }">
+                                                        <div class="rate-inner">
+                                                            <div class="rate-value">{{ getSavingsRate() }}%</div>
+                                                            <div class="rate-label">of income</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="projection-goals">
+                                                <div class="projection-title">Goal Progress</div>
+                                                <div v-if="savingsGoals.length > 0" class="goal-projections">
+                                                    <div v-for="goal in getGoalProjections()" :key="goal.id" class="goal-projection">
+                                                        <div class="goal-info">
+                                                            <div class="goal-name">{{ goal.name }}</div>
+                                                            <div class="goal-timeline">{{ goal.timeline }}</div>
+                                                        </div>
+                                                        <div class="goal-progress-bar">
+                                                            <div class="progress-track">
+                                                                <div class="progress-fill" :style="{ width: goal.progress + '%' }"></div>
+                                                                <div class="progress-marker" :style="{ left: goal.projectedProgress + '%' }"></div>
+                                                            </div>
+                                                            <div class="progress-labels">
+                                                                <span>Current: {{ goal.progress }}%</span>
+                                                                <span>Projected: {{ goal.projectedProgress }}%</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div v-else class="no-goals">
+                                                    <p>No savings goals set. Create goals in the Settings tab.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div v-if="activeView === 'accountOptions'" class="account-options">
+                        <div class="debit-card">
+                            <div>{{ t('order_debit_card') }}</div>
+                            <label for="pin-number">{{ t('enter_pin') }}:</label>
+                            <input type="number" id="pin-number" v-model="debitPin" />
+                            <div class="card-buttons">
+                                <button class="action-button" @click="orderDebitCard">{{ t('order') }}</button>
+                            </div>
+                        </div>
+                        <div class="create-account">
+                            <div>{{ t('create_account') }}</div>
+                            <div class="options-labels">
+                                <label for="createAccountName">{{ t('account_name') }}:</label>
+                                <label for="createAccountAmount">{{ t('initial_deposit') }}:</label>
+                            </div>
+                            <div class="options-inputs">
+                                <input type="text" id="createAccountName" v-model="createAccountName" />
+                                <input type="number" id="createAccountAmount" v-model="createAccountAmount" />
+                            </div>
+                            <div class="card-buttons">
+                                <button class="action-button" @click="openAccount">{{ t('create') }}</button>
+                            </div>
+                        </div>
+                        <div class="edit-account">
+                            <div>Manage Shared Account</div>
+                            <div class="options-labels">
+                                <label for="editAccount">Account:</label>
+                                <label for="editAccountName">Name:</label>
+                            </div>
+                            <div class="options-inputs">
+                                <select id="editAccount" v-model="editAccount">
+                                    <option v-for="account in accounts.filter(a => a.type === 'shared')" :key="account.name" :value="account">{{ account.name }}</option>
+                                </select>
+                                <input type="text" id="editAccountName" v-model="editAccountName" />
+                            </div>
+                            <div class="card-buttons">
+                                <button class="action-button" @click="deleteAccount">Delete</button>
+                                <button class="action-button" @click="renameAccount">Rename</button>
+                            </div>
+                        </div>
+                        <div class="manage-account">
+                            <div>Manage Account Users</div>
+                            <div class="options-labels">
+                                <label for="manageAccountName">Account:</label>
+                                <label for="manageUserName">Citizen ID:</label>
+                            </div>
+                            <div class="options-inputs">
+                                <select id="manageAccountName" v-model="manageAccountName">
+                                    <option v-for="account in accounts.filter(a => a.type === 'shared')" :key="account.name" :value="account">{{ account.name }}</option>
+                                </select>
+                                <div class="combo-input">
+                                    <input type="text" id="manageUserName" v-model="manageUserName" @input="filterUsers" @focus="showUsersDropdown = true" @blur="hideDropdown" />
+                                    <div class="dropdown-container" v-if="showUsersDropdown">
+                                        <div class="list-container">
+                                            <ul>
+                                                <li v-for="user in filteredUsers" @click="selectUser(user)">{{ user }}</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-buttons">
+                                <button class="action-button" @click="addUserToAccount">Add</button>
+                                <button class="action-button" @click="removeUserFromAccount">Remove</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Savings Goals -->
+                        <div class="savings-goals">
+                            <div>Savings Goals</div>
+                            <div class="options-labels">
+                                <label for="goalAccount">Account:</label>
+                                <label for="goalName">Goal Name:</label>
+                            </div>
+                            <div class="options-inputs">
+                                <select id="goalAccount" v-model="goalAccount">
+                                    <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                                </select>
+                                <input type="text" id="goalName" v-model="goalName" placeholder="e.g. New Car" />
+                            </div>
+                            <div class="options-labels">
+                                <label for="goalAmount">Target Amount:</label>
+                                <label for="goalDate">Target Date:</label>
+                            </div>
+                            <div class="options-inputs">
+                                <div class="amount-input">
+                                    <span class="currency-symbol">$</span>
+                                    <input type="number" id="goalAmount" v-model="goalAmount" placeholder="Enter amount" />
+                                </div>
+                                <input type="date" id="goalDate" v-model="goalDate" />
+                            </div>
+                            <div class="card-buttons">
+                                <button class="action-button" @click="createSavingsGoal">Create Goal</button>
+                            </div>
+                            
+                            <!-- Active Goals -->
+                            <div class="active-goals" v-if="savingsGoals.length > 0">
+                                <h4>Your Active Goals</h4>
+                                <div v-for="goal in savingsGoals" :key="goal.id" class="goal-item">
+                                    <div class="goal-info">
+                                        <div class="goal-name">{{ goal.name }}</div>
+                                        <div class="goal-progress">
+                                            <div class="progress-bar">
+                                                <div class="progress-fill" :style="{ width: getGoalProgress(goal) + '%' }"></div>
+                                            </div>
+                                            <div class="progress-text">
+                                                ${{ formatCurrency(goal.currentAmount) }} of ${{ formatCurrency(goal.targetAmount) }}
+                                                ({{ getGoalProgress(goal) }}%)
+                                            </div>
+                                        </div>
+                                        <div class="goal-date">Target: {{ formatDate(goal.targetDate) }}</div>
+                                    </div>
+                                    <div class="goal-actions">
+                                        <button class="action-button" @click="contributeToGoal(goal)">
+                                            <span class="material-icons">add</span>
+                                            Add Funds
+                                        </button>
+                                        <button class="action-button" @click="deleteGoal(goal)">
+                                            <span class="material-icons">delete</span>
+                                            Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="banking-container" v-show="isATMOpen">
+                <div class="sidebar">
+                    <div class="sidebar-header">
+                        <h2>{{ playerName }}</h2>
+                        <div class="balance-info">
+                            <span class="balance-label">Cash Balance</span>
+                            <span class="positive-balance">${{ formatCurrency(playerCash) }}</span>
+                        </div>
+                    </div>
+                    <div class="sidebar-accounts">
+                        <div class="total-balance">
+                            <span class="balance-label">Total Account Balance</span>
+                            <span class="positive-balance">${{ formatCurrency(getTotalBalance()) }}</span>
+                        </div>
+                        <ul>
+                            <li v-for="account in accounts" :key="account.name">
+                                <div class="account-card">
+                                    <div class="account-name">{{ account.name }}</div>
+                                    <div class="account-type">Type: {{ account.type === 'shared' ? 'Business' : 'Personal' }}</div>
+                                    <div class="account-iban">
+                                        <span class="iban-label">IBAN:</span>
+                                        <span class="iban-number">{{ accountNumber }}</span>
+                                    </div>
+                                    <div class="account-balance">
+                                        <span class="positive-balance">${{ formatCurrency(account.balance) }}</span>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                    <button class="action-button logout-btn" @click="closeApplication()">
+                        <span class="material-icons">logout</span>
+                        تسجيل الخروج
+                    </button>
+                </div>
+                <div class="main-content">
+                    <div class="atm-header">
+                        <div class="atm-logo">
+                            <span class="material-icons">atm</span>
+                            <h2>خدمات الصراف الآلي</h2>
+                        </div>
+                        <div class="notification-container" v-if="notification">
+                            <div :class="['notification', notification.type]">
+                                <span class="material-icons">{{ notification.type === 'success' ? 'check_circle' : 'error' }}</span>
+                                {{ notification.message }}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Quick Balance Overview -->
+                    <div class="balance-overview">
+                        <div class="balance-card">
+                            <div class="balance-card-header">
+                                <span class="material-icons">account_balance_wallet</span>
+                                <h3>التوازن السريع</h3>
+                            </div>
+                            <div class="balance-details">
+                                <div class="balance-item">
+                                    <span>نقدي:</span>
+                                    <span class="positive-balance">${{ formatCurrency(playerCash) }}</span>
+                                </div>
+                                <div class="balance-item" v-for="account in accounts.slice(0, 2)" :key="account.name">
+                                    <span>{{ account.name }}:</span>
+                                    <span class="positive-balance">${{ formatCurrency(account.balance) }}</span>
+                                </div>
+                                <div class="balance-item total">
+                                    <span>المجموع:</span>
+                                    <span class="positive-balance">${{ formatCurrency(getTotalBalance()) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="atm-content">
+                        <div class="atm-grid">
+                            <!-- Withdraw Section -->
+                            <div class="atm-card withdraw-card">
+                                <div class="atm-card-header">
+                                    <span class="material-icons">payments</span>
+                                    <h3>سحب النقود</h3>
+                                </div>
+                                <div class="atm-card-content">
+                                    <label for="fromAccount">حدد الحساب:</label>
+                                    <select id="fromAccount" v-model="selectedMoneyAccount">
+                                        <option v-for="account in accounts" :key="account.name" :value="account">{{ account.name }}</option>
+                                    </select>
+                                    
+                                    <label for="amount">المبلغ المراد سحبه:</label>
+                                    <div class="amount-input">
+                                        <span class="currency-symbol">$</span>
+                                        <input type="number" id="amount" v-model="selectedMoneyAmount" placeholder="Enter amount" />
+                                    </div>
+                                    
+                                    <div class="quick-amounts">
+                                        <button @click="selectedMoneyAmount = 100">$100</button>
+                                        <button @click="selectedMoneyAmount = 500">$500</button>
+                                        <button @click="selectedMoneyAmount = 1000">$1000</button>
+                                        <button @click="selectedMoneyAmount = 5000">$5000</button>
+                                    </div>
+                                    
+                                    <label for="money-reason">سبب الانسحاب:</label>
+                                    <input type="text" id="money-reason" v-model="moneyReason" placeholder="e.g. Personal expenses" />
+                                    
+                                    <button class="action-button withdraw-btn" @click="withdrawMoney">
+                                        <span class="material-icons">attach_money</span>
+                                        سحب النقود
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Recent Transactions -->
+                            <div class="atm-card transactions-card">
+                                <div class="atm-card-header">
+                                    <span class="material-icons">receipt_long</span>
+                                    <h3>المعاملات الأخيرة</h3>
+                                </div>
+                                <div class="atm-card-content">
+                                    <div class="mini-transactions">
+                                        <div v-if="selectedMoneyAccount && statements[selectedMoneyAccount.name]">
+                                            <div v-for="(statement, index) in statements[selectedMoneyAccount.name].slice(0, 5)" :key="index" class="mini-transaction-item">
+                                                <div class="transaction-info">
+                                                    <span class="transaction-date">{{ formatDate(statement.date) }}</span>
+                                                    <span class="transaction-reason">{{ statement.reason }}</span>
+                                                </div>
+                                                <span :class="balanceClass(statement.type)">
+                                                    {{ statement.type === 'deposit' ? '+' : '-' }}${{ formatCurrency(statement.amount) }}
+                                                </span>
+                                            </div>
+                                            <div v-if="!statements[selectedMoneyAccount.name] || statements[selectedMoneyAccount.name].length === 0" class="no-transactions">
+                                                <span class="material-icons">info</span>
+                                                <p>No recent transactions</p>
+                                            </div>
+                                        </div>
+                                        <div v-else class="no-transactions">
+                                            <span class="material-icons">account_balance</span>
+                                            <p>حدد حسابًا لعرض المعاملات</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Quick Actions -->
+                        <div class="quick-actions">
+                            <div class="quick-actions-header">
+                                <span class="material-icons">flash_on</span>
+                                <h3>الإجراءات السريعة</h3>
+                            </div>
+                            <div class="quick-actions-buttons">
+                                <button class="quick-action-btn" @click="quickWithdraw(100)">
+                                    <span class="material-icons">arrow_upward</span>
+                                    سريع $100
+                                </button>
+                                <button class="quick-action-btn" @click="quickWithdraw(500)">
+                                    <span class="material-icons">arrow_upward</span>
+                                    سريع $500
+                                </button>
+                                <button class="quick-action-btn" @click="checkBalance">
+                                    <span class="material-icons">account_balance_wallet</span>
+                                    يفحص Balance
+                                </button>
+                                <button class="quick-action-btn" @click="closeApplication">
+                                    <span class="material-icons">exit_to_app</span>
+                                    مخرج
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-if="showPinPrompt" class="pin-overlay">
+                <div class="pin-prompt">
+                    <div class="pin-header">
+                        <span class="material-icons">lock</span>
+                        <h3>أدخل رقم التعريف الشخصي الخاص بك</h3>
+                    </div>
+                    <div class="pin-input">
+                        <input type="password" v-model="enteredPin" placeholder="أدخل رقم التعريف الشخصي" readonly />
+                    </div>
+                    <div class="number-pad">
+                        <button v-for="number in 9" :key="number" @click="appendNumber(number)">{{ number }}</button>
+                        <button @click="appendNumber(0)">0</button>
+                    </div>
+                    <div class="card-buttons">
+                        <button class="action-button" @click="enteredPin = ''">
+                            <span class="material-icons">backspace</span>
+                            مسح
+                        </button>
+                        <button class="action-button" @click="pinPrompt(enteredPin)">
+                            <span class="material-icons">check_circle</span>
+                            فتح
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+    <script src="script.js"></script>
+</html>
